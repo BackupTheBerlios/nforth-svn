@@ -1,0 +1,163 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+<link rel="stylesheet" type="text/css" href="docs.css">
+<title>The nForth kernel</title>
+</head>
+<body>
+
+<ul>
+<li><a href="nf-intro.html">Introduction</a></li>
+  <ul>
+  <li><a href="nf-intro.html#whatisforth">What is Forth?</a></li>
+  <li><a href="nf-intro.html#whynforth">Why nForth?</a></li>
+  <li><a href="nf-intro.html#forthprimer">A primer to general Forth</a></li>
+  </ul>
+</ul>
+
+<h1>Introduction</h1>
+
+<a name="whatisforth"></a>
+<h2>What is Forth?</h2>
+
+<p><a href="http://en.wikipedia.org/wiki/Forth">Forth</a> is a unique in many
+aspects programming language which is usually placed somewhere between
+low-level programming languages (assembly, byte-code etc) and high-level
+programming languages such as C, Pascal, BASIC and others.
+Its unique features are small program footprint (often Forth programs will
+be smaller than even those written in assembly), good execution speed
+(comparable to languages which compile to byte-code) and low hardware
+requirements (a complete Forth kernel may be coded in a few tens
+of kilobytes on a typical modern machine).
+</p>
+
+<p>A specific feature of Forth is its use of the so-called 
+<a href="http://en.wikipedia.org/wiki/Reverse_Polish_notation">
+reverse Polish notation (RPN)</a> for everythig.
+Those, who are familiar with
+<a href="http://en.wikipedia.org/wiki/HP-48_series">Hewlett-Packard
+RPN calculators</a>, or with the
+<a href="http://en.wikipedia.org/wiki/Elektronika_MK-61">old Soviet
+RPN calculators</a> will know what I mean. For those who don't,
+I would recommend to read the article in Wikipedia about RPN
+(by following the link above).
+</p>
+
+<p>Some of the most notable features of Forth (in no specific order):
+</p>
+
+<ul>
+<li>The Reverse Polish Notation (RPN)</li>
+<li>Forth has no type checking (here it is similar to assembly)</li>
+<li>The biggest part of a Forth kernel is usually written in Forth itself</li>
+<li>Interactive immediate interpretation or compilation of the code you enter</li>
+<li>Very extensible and flexible: you can add new keywords and even flow control
+constructs on the fly!</li>
+<li>Lots, no - LOTS - of implementations, including freeware. Perhaps, Forth
+has the most numerous number of implementations amongst all programming languages.</li>
+</ul>
+
+<p>Forth is relatively widely used, although this is not very widely known.
+For example, the well-known PostScript language is, in fact, a Forth dialect
+(with graphics-specific extensions). Also, it is used as the language of the
+boot loader (what's called "BIOS" on PCs) on several architectures: SPARC,
+PowerPC, OLPC (one-laptop-per-child project).
+<p>
+
+<p>There are even several microprocessors which use Forth as their low-level
+language (e.g. Forth is their assembly language).</p>
+
+<p>The author of Forth is <a href="http://www.colorforth.com/">Charles H. Moore</a>,
+who developed it since 1958 initially for controlling a telescope system.
+</p>
+
+<a name="whynforth"></a>
+<h2>Why nForth?</h2>
+
+<p>nForth is yet another Forth implementation which has been specifically
+optimized for very small computers (microcontrollers). The nForth kernel
+is as small as 4k (and can be made much smaller if you don't need the
+interactive session capabilities), can work with as little as 128 bytes
+of RAM and needs some EEPROM memory to store user-defined words (the more you
+have, the better for end user).
+</p>
+
+<p>The name nForth is short for "nano-Forth". The "nano-" prefix was
+chosen because the name micro-Forth is already taken by another Forth
+implementation :-) Another reason was that the primary target was to
+create a very small (but still enough for any task) Forth implementation.
+Thus, no Forth standards were taken as a base; instead, I started from
+an almost empty dictionary and then have added the words that were
+absolutely neccessary for implementing the nForth kernel itself.
+The idea is that if this dictionary is enough for implementing a
+working Forth kernel, it should be enough for most tasks as well.
+</p>
+
+<p>A distinctive feature of microcontrollers is their so-calld Harvard
+architecture. Every type of memory (RAM, ROM (flash), EEPROM) use a separate
+address space, unlike the conventional computer architecture (which is called
+"von Neumann architecture") with a single flat address space. nForth
+has been primarily designed for machines with Harvard architecture.
+</p>
+
+<p>Why the need of nForth on microcontrollers? Sometimes you need to make
+a intelligent hardware device which behaviour can be modified by the end
+user. Of course, you can re-flash your microcontroller every time, but this
+means the end-user will have to know everything about the internals of the
+device; it would be useful to have some relatively high-level scripting
+language which can access all features of the device, but at the same time
+doesn't expose low-level details about the inner workings.
+</p>
+
+<p>Examples of such usage are: programmable battery chargers, simple robots,
+various measurement devices (multimeters, oscilloscopes etc), light controllers
+and so on - limited by your imagination only.
+</p>
+
+<p>nForth supports up to 32 kilobytes of flash memory, and up to 32
+kilobytes of summary RAM + EEPROM memory. If you need Forth on a microcontroller
+with more resources, look at other Forth implementations with more features.
+</p>
+
+<p>nForth has a limited core vocabulary: this is a tradeoff for the small
+kernel size. Only the words that were found absolutely needed were implemented.
+Also, the implementation allows to disable usage of certain sets of words
+(vocabularies) if they aren't needed for your application.
+</p>
+
+<p>Despite the fact that nForth has been designed for Harvard architecture,
+still, it is possible to compile a nForth kernel for von Neumann
+computers with almost no overhead compared to "normal" Forth kernels.
+This is particularily useful for debugging: since nForth itself is
+written in a portable manner, it can be easily compiled for traditional
+personal computers so that it can be easily debugged and explored.
+</p>
+
+<a name="forthprimer"></a>
+<h2>A primer to general Forth</h2>
+
+<p>There are many guides for novices on Forth on the net, so I won't write
+yet another bad primer; instead, I'll put here a collection of links to
+some good sources of information on Forth.
+</p>
+
+<ul>
+<li><a href="http://www.charlton.demon.co.uk/stackflow/">An Introduction to Forth
+Using StackFlow</a>: this is a good guide for absolute beginners and give a good
+overview of the basic Forth concepts: the stack, control flow etc.
+<li><a href="http://astro.pas.rochester.edu/Forth/forth.html">An Introduction to
+Forth</a>: this is a deeper tutorial for beginners which gives some more
+information on Forth.
+<li>The former <a href="http://www.forth.org/">Forth Interest Group</a> site
+can be used as a starting point for further investigations regarding Forth.
+<li>The <a href="http://en.wikipedia.org/wiki/Forth">Wikipedia article about Forth</a>
+is also a good source of information on Forth.
+<li>There's a <a href="http://forthfreak.net/jsforth80x25.html">complete Forth
+implementation written in JavaScript</a>, you can immediately try what you've
+learned by previous links.</li>
+</p>
+</ul>
+
+</body>
+</html>

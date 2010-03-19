@@ -1,0 +1,45 @@
+These linker scripts are used to create nForth executables on "big" architectures
+like x86 and x86_64. These are not the target platform for nForth, however,
+they are quite handy for debugging and extending the language. Since nForth
+itself is written in a portable manner, it does not depend too much of the
+underlying architecture or operating system.
+
+However, nForth is designed to be a 16-bit FORTH machine. It would be easily
+possible to write nForth in a way such that it would use the 'native' word
+size on any architecture (this would allow us to push, say, 64-bit pointers
+on the FORTH stack and use them directly), but this also would destroy the
+very sense of compiling nForth on "big" architectures, since it's not meant
+to be pretty useful on these archs other than for debugging.
+
+So, since all offsets within the nForth machine are 16-bit, we can't put
+direct pointers to variables and words, since they are 32- or 64- bit size.
+However, we can offset all variables from some known base, and if the total
+amount of code will not exceed 32k, and amount of data 16k, and amount of
+EEPROM 16k it will work.
+
+GNU binutils allow to pass to linker a special file called 'linker script' which
+tells where every section will be placed in the final executable. We will use
+a linker script to place the ".nf_ram" and ".nf_eeprom" sections at some
+known predefined addresses, and will subtract these addresses from the offset
+of every function and variable we reference in FORTH code.
+
+Preparing such a script for your platform is relatively easy: First, you must
+get the default linker script (ld --version >script), then remove the extra
+garbage at the beginning and the end of the file. And, finally, insert
+the following directives somewhere at the end of the script:
+
+  /*-------* Place 32k of pseudo-microcontroller ROM here *-------*/
+  .nf_flash 0x610000 :
+    {
+      /* Skip some bytes to avoid having words at addresses
+         with special meaning (e.g. CODE_RET & CODE_ICP) */
+      LONG (0);
+      *(.nf_flash)
+      _etext = .;
+    }
+  /*-------* Place 16k of pseudo-microcontroller RAM here *-------*/
+  .nf_ram 0x620000 : { *(.nf_ram) }
+  .nf_ram_x : { __heap_start = .; . = ALIGN (16384); }
+  /*-------* Place 16k of pseudo-microcontroller EEPROM here *-------*/
+  .nf_eeprom 0x630000 : { *(.nf_eeprom) }
+  .nf_eeprom_x : { __eeprom_end = .; . = ALIGN (16384); }

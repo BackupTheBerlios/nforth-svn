@@ -1,0 +1,676 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+<link rel="stylesheet" type="text/css" href="docs.css">
+<title>The nForth language</title>
+</head>
+<body>
+
+<ul>
+<li><a href="nf-lang.html">The nForth language</a></li>
+  <ul>
+  <li><a href="nf-lang.html#memorymap">Unified memory map</a></li>
+  <li><a href="nf-lang.html#impdetails">Implementation details</a></li>
+  <li><a href="nf-lang.html#coredict">The core dictionary</a></li>
+    <ul>
+    <li><a href="nf-lang.html#kerncontrol">Kernel control</a></li>
+    <li><a href="nf-lang.html#stackops">Stack operations</a></li>
+    <li><a href="nf-lang.html#arithmetics">Arithmetics</a></li>
+    <li><a href="nf-lang.html#memalloc">Memory allocation</a></li>
+    <li><a href="nf-lang.html#memaccess">Memory access</a></li>
+    <li><a href="nf-lang.html#inout">Input and output</a></li>
+    <li><a href="nf-lang.html#constvars">Predefined constants and variables</a></li>
+    <li><a href="nf-lang.html#strops">Operations with strings</a></li>
+    <li><a href="nf-lang.html#controlflow">Control flow</a></li>
+    <li><a href="nf-lang.html#compilation">Compiling new words</a></li>
+    </ul>
+  <li><a href="nf-lang.html#advancedusage">Advanced usage</a></li>
+    <ul>
+    <li><a href="nf-lang.html#wordtypes">Word types</a></li>
+    <li><a href="nf-lang.html#does">Clever DATA words: DOES&gt;</a></li>
+    </ul>
+  </ul>
+</ul>
+
+<h1>The nForth language</h1>
+
+<p>nForth is a 16-bit Forth kernel. This means that the stack
+holds 16-bit words. A word from the stack can be anything: a number
+(interpreted as signed from -32768 to +32767), a pointer to a string,
+a pointer to a function etc.
+</p>
+
+<p>What you would call a 'procedure' or 'function' in traditional programming
+languages in Forth is called a 'word'. nForth stores predefined words
+in ROM (flash) memory, and user-defined words in EEPROM memory. Thus,
+user-defined words won't be lost after a poweroff.
+</p>
+
+<p>Note that the word "word" may reference either a Forth "word" (e.g.
+a subroutine) or a machine word (a 16-bit word). Most of the time I've
+tried to avoid using the word "word" in the sense of "machine word"
+(using "value" instead where appropiate), but sometimes still it has
+to be used. Try to guess what kind of "word" is meant by context :)
+</p>
+
+<p>A set of words is called a 'vocabulary' in Forth. nForth has some
+limited support for vocabularies. You may configure what vocabularies are
+used by your application, thus trading functionality for core size.
+Currently, a nForth context may use two dictionaries simultaneously:
+the core dictionary (which contains core nForth words and the words
+defined at firmware compilation time, such as application-specific words
+which provide access to hardware-specific functionality) and the user
+dictionary (which contains the user-defined words). These vocabularies
+may be easily switched at run-time (by providing specific words in
+dictionary) by simply replacing one of the pointers to active
+vocabularies.
+</p>
+
+<a name="memorymap"></a>
+<h2>Unified memory map</h2>
+
+<p>There are three types of memory available on a typical MCU:
+
+<ul>
+<li>ROM (flash memory): used to store the basic (static) words.
+<li>EEPROM: used to store persistent variables and user-defined words
+(indirect code only, native code not supported).
+<li>RAM: used to store the stacks and variables in nForth.
+</ul>
+
+<p>Word definitions can be stored in ROM and EEPROM memories.
+RAM cannot be used for this; instead, RAM is used for the stack and
+to store volatile variables. EEPROM memory can be also used for
+persistent variables (those which don't lose their value across poweroffs).
+</p>
+
+<p>Since the Forth kernel does not know what type of memory an address
+picked from the stack refers to, it was decided to unify the Forth address
+space, so that a 16-bit address can be used to reference all kinds of memory
+available on a typical microcontroller. So internally nForth uses
+a uniform memory addressing scheme (hexadecimal values):
+</p>
+
+<ul>
+<li>0000..7FFF: These addresses refer to ROM (flash memory)</li>
+<li>8000..7FFF+EEPROM_SIZE: These addresses are mapped to EEPROM</li>
+<li>8000+EEPROM_SIZE..7FFF+EEPROM_SIZE+RAM_SIZE: These addresses are mapped to RAM</li>
+</ul>
+
+<p>From the above scheme it's clear that a nForth kernel cannot address more
+than 32k of flash memory and more than 32k of summary RAM+EEPROM. More than that,
+for some reasons described later it cannot reference more than 16k of EEPROM
+memory. In the following we'll call an address in this unified address space
+a "unified pointer".
+</p>
+
+<a name="impdetails"></a>
+<h2>Implementation details</h2>
+
+<p>The nForth kernel keeps the whole state (including the data and return
+stacks) in a structure named 'nForth context'. You may define multiple
+contexts (just make sure they fit in your microcontroller RAM - a context
+is a relatively big structure) and then switch between them at runtime
+(cooperative or preemptive multi-tasking).
+</p>
+
+<p>Words in a vocabulary are linked in a chained list, last word points to
+previous and so on, until the first word which contains '0' in the
+'previous link' field. A vocabulary pointer is just a pointer to the last
+word in chain. This allows for clever tricks, by using the same subset of
+words in several vocabularies: the first words in vocabularies are different,
+and at some point the back link is set to point to some other list, thus
+effectively making it a new dictionary incorporating another dictionary.
+</p>
+
+<p>Forth uses a very simple memory allocation scheme: there's a global pointer
+to the start of free memory (<b>HERE</b>). If you want to allocate some memory,
+you just increment this pointer by how much you need (with <b>ALLOT</b>).
+It is not possible to free up blocks of memory which are located between
+other allocated blocks, you can just draw back the <b>HERE</b> pointer
+(by providing a negative argument to <b>ALLOT</b>, e.g. allocating negative
+amounts of memory).
+</p>
+
+<p>Usually allocation is done for new words. When user starts defining a new
+word (with the : word), the kernel will allocate space for the word header
+in EEPROM, and then enter compilation mode (<b>STATE</b> is set to <b>TRUE</b>).
+In compilation mode any words entered by user are compiled rather than
+interpreted immediately. 'Compilation' simply means that the address
+of the word is appended at the end of the word definition. When a word
+definition is complete you may run it with the <b>EXECUTE</b> word,
+which is the core of the whole Forth kernel.
+It will pick these addresses one by one and executes the words located
+at those addresses. This technique is called
+<a href="http://en.wikipedia.org/wiki/Threaded_code#Indirect_threading">
+indirect threading code</a> or indirect code for short.
+</p>
+
+<p>nForth uses some special codes to make code smaller. The following
+list shows the meaning of the different codes (hexadecimal values):
+</p>
+
+<ul>
+<li>0000..7FFF: Execute the word at this address in ROM (flash memory)</li>
+<li>8000..BFFF: Execute the word at this address-8000 in EEPROM</li>
+<li>C000..C1FF: (JMP) relative jump in the range -255..+255</li>
+<li>C200..C3FF: (JZ) POP and relative jump if zero in the range -255..+255</li>
+<li>C400..FFFF: push on stack a numeric constant in the range -7680..+7679</li>
+</ul>
+
+<p>As you may observe, the codes in the range 0000-BFFF are basicaly uniform
+pointers to either ROM or EEPROM. There are no words in RAM, thus the range
+from C000 to FFFF is used for some special "built-in" functionality.
+</p>
+
+<p>Also there are two special values: 0000 is used as the indirect code for
+the <b>EXIT</b> word (which marks the end of word definition, or 'return'
+from word), and 0001, which is called <b>ICP</b>, will push on stack the
+value of the indirect-code-pointer from the caller word (this will be
+explained later).
+</p>
+
+<p>Since word definitions are placed in both ROM and EEPROM, they cannot
+contain variable values directly, like traditional Forth does.
+Thus, DATA words will instead contain a unified pointer to either
+RAM or EEPROM.
+</p>
+
+<a name="coredict"></a>
+<h2>The core dictionary</h2>
+
+<p>For more flexibility this nForth implementation provides several
+variants of the core dictionary:
+</p>
+
+<dl>
+<dt>nf_voc_core</dt>
+<dd>This dictionary contains only the most basic words: stack manipulation,
+memory allocation, arithmetics and boolean operations, exception handling,
+memory reading and writing</dd>
+<dt>nf_voc_core_io</dt>
+<dd>This is the core vocabulary, extended with some i/o words like
+<b>EMIT</b>, <b>TYPE</b>, <b>.</b>, <b>GETC</b> and some others. If you use
+this vocabulary, don't forget to call nf_init_io() at application
+initialization time</dd>
+<dt>nf_voc_core_inter</dt>
+<dd>This is the most complete vocabulary, providing core, i/o and interactive
+functionality like the words <b>INTERPRET</b>, <b>WORD</b>, <b>STATE</b>,
+<b>CREATE</b>, <b>VARIABLE</b>, flow control (<b>IF</b>, <b>?DO</b>,
+<b>BEGIN</b>)</dd>
+</dl>
+
+<p>In the following, the syntax of Forth words are given in traditional format,
+e.g. "( x y z -- a b )" would mean that the word accepts three numbers on
+the stack on input - denoted as x, y, z - and will put two results on return,
+denoted as a and b.
+</p>
+
+<p>Some words may return different values depending on some conditions.
+Such variants are denoted by a vertical bar, for example: "( x -- x 0 | y 1 )"
+would mean that the function picks x and returns either "x 0", or "y 1"
+depending on some condition.
+</p>
+
+<a name="kerncontrol"></a>
+<h3>Kernel control</h3>
+
+<dl>
+<dt>RESET ( -- )</dt>
+<dd>Reset the Forth virtual machine. The RAM is cleared, the stack is cleared,
+all words that were not <b>SAVE</b>'d are lost. Basically, this is almost exactly
+what happens after you toggle device power.</dd>
+<dt>CLEAN ( -- )</dt>
+<dd>Do a total cleanup of the Forth virtual machine. EEPROM is re-initialized,
+user vocabulary is reset. <b>CLEAN</b> also involves a <b>RESET</b> as the
+last step.</dd>
+<dt>SAVE ( -- )</dt>
+<dd>Save currently defined user words so that they will survive a <b>RESET</b>
+or a poweroff.</dd>
+<dt>INTERPRET ( -- )</dt>
+<dd>Go into a infinite loop, reading user input and interpreting or compiling
+it (depending on the variable <b>STATE</b>). Only a exception may interrupt the
+execution of this word.</dd>
+<dt>ERROR ( n -- )</dt>
+<dd>Display an error code according to the NFE_XXX constants in nf.h.
+These error codes are usually thrown by <b>INTERPRET</b> and company to identify
+major problems while processing user input.</dd>
+<dt>[</dt>
+<dd>Immediately switch to interpret mode (sets <b>STATE</b> to <b>FALSE</b>)</dd>
+<dt>]</dt>
+<dd>Immediately switch to compile mode (sets <b>STATE</b> to <b>TRUE</b>)</dd>
+<dt>( ... )</dt>
+<dd>Round brackets denote a comment. The first word must be a opening
+round bracked, followed by a space (word delimiter). Everything else
+is ignored until either a newline or a closing round bracket is encountered.</dd>
+</dl>
+
+<a name="stackops"></a>
+<h3>Stack operations</h3>
+
+<dl>
+<dt>SWAP ( n1 n2 -- n2 n1 )</dt>
+<dd>Swap the top two words on the stack</dd>
+<dt>OVER ( n1 n2 -- n1 n2 n1 )</dt>
+<dd>Push a copy of the second word counting from the top of the stack</dd>
+<dt>ROT ( n1 n2 n3 -- n2 n3 n1 )</dt>
+<dd>Pull the third word from the stack and push it on the top</dd>
+<dt>PICK ( an ... a2 a1 n -- an ... a2 a1 an)</dt>
+<dd>Push a copy of the n-th word on the stack (counting from 0)</dd>
+<dt>DUP ( n -- n n )</dt>
+<dd>Push a duplicate of the topmost word on the stack</dd>
+<dt>?DUP ( n -- n | n n )</dt>
+<dd>Duplicate the topmost word on the stack, but only if it is not zero.
+Useful to be used together with <b>IF</b></dd>
+<dt>2DUP ( n1 n2 -- n1 n2 n1 n2 )</dt>
+<dd>Duplicate the topmost two words on the stack</dd>
+<dt>DROP ( n -- )</dt>
+<dd>Drop the topmost word from the stack</dd>
+</dl>
+
+<a name="arithmetics"></a>
+<h3>Arithmetics</h3>
+
+<dl>
+<dt>+ ( n1 n2 -- n1+n2 )</dt>
+<dd>Sum the topmost two values on the stack and push the result</dd>
+<dt>- ( n1 n2 -- n1-n2 )</dt>
+<dd>Subtract the topmost value on the stack from the second value and push
+the result back on the stack.</dd>
+<dt>* ( n1 n2 -- n1*n2 )</dt>
+<dd>Compute the result of the multiplication of the topmost two words
+on the stack and push the result back</dd>
+<dt>/ ( n1 n2 -- n1/n2 )</dt>
+<dd>Divide the second word on the stack by the topmost word and push
+the result back on the stack</dd>
+<dt>MOD ( n1 n2 -- n1%n2 )</dt>
+<dd>Compute the second word modulo topmost word and push the result
+on the stack</dd>
+<dt>/MOD ( n1 n2 -- n1%n2 n1/n2 )</dt>
+<dd>Compute both the result and the modulo of the second
+word divided by topmost word, and put both results on the stack.</dd>
+<dt>1+ ( n -- n+1 )</dt>
+<dd>Increment the topmost word by one</dd>
+<dt>1- ( n -- n-1 )</dt>
+<dd>Decrement the topmost word by one</dd>
+<dt>&lt; ( n1 n2 -- TRUE | FALSE )</dt>
+<dd>If second word is less than topmost, push <b>TRUE</b>, otherwise push <b>FALSE</b></dd>
+<dt>&gt; ( n1 n2 -- TRUE | FALSE )</dt>
+<dd>If second word is greater than topmost, push <b>TRUE</b>, otherwise push <b>FALSE</b></dd>
+<dt>&lt;&gt; ( n1 n2 -- TRUE | FALSE )</dt>
+<dd>If second word is different than topmost, push <b>TRUE</b>, otherwise push <b>FALSE</b></dd>
+<dt>= ( n1 n2 -- TRUE | FALSE )</dt>
+<dd>If second word is equal to topmost, push <b>TRUE</b>, otherwise push <b>FALSE</b></dd>
+<dt>&lt;= ( n1 n2 -- TRUE | FALSE )</dt>
+<dd>If second word is less or equal than topmost, push <b>TRUE</b>, otherwise push <b>FALSE</b></dd>
+<dt>&gt;= ( n1 n2 -- TRUE | FALSE )</dt>
+<dd>If second word is greater or equal than topmost, push <b>TRUE</b>, otherwise push <b>FALSE</b></dd>
+<dt>AND ( n1 n2 -- n1&n2 )</dt>
+<dd>Push the result of the bitwise AND between top two words on the stack</dd>
+<dt>OR ( n1 n2 -- n1|n2 )</dt>
+<dd>Push the result of the bitwise OR between top two words on the stack</dd>
+<dt>XOR ( n1 n2 -- n1^n2 )</dt>
+<dd>Push the result of the bitwise XOR between top two words on the stack</dd>
+<dt>NOT ( n -- !n )</dt>
+<dt>Push the logical inversion of the topmost word on the stack</dt>
+<dd>INVERT ( n -- ~n )</dd>
+<dt>Push the bitwise inversion of the topmost word on the stack</dt>
+<dd>NEGATE ( n -- -n )</dd>
+<dd>Negate the sign of the topmost word on the stack</dd>
+<dt>ABS ( n -- |n| )</dt>
+<dd>Push the absolute value of the topmost word on the stack</dd>
+<dt>CHEQ ( n1 n2 -- n1 TRUE | n1 FALSE )</dt>
+<dd>Check if top two words are equal; replace topmost word by either <b>TRUE</b> or
+<b>FALSE</b> (comparison result) but don't touch the second word</dd>
+<dt>MIN ( n1 n2 -- n1 | n2 )</dt>
+<dd>Take the top two words on the stack and push back the one that is smaller
+than another</dd>
+<dt>MAX ( n1 n2 -- n1 | n2 )</dt>
+<dd>Take the top two words on the stack and push back the one that is larger
+than another</dd>
+</dl>
+
+<a name="memalloc"></a>
+<h3>Memory allocation</h3>
+
+<dl>
+<dt>HERE ( -- n )</dt>
+<dd>Leaves on stack the first unallocated address in EEPROM. EEPROM is allocated
+from bottom up, thus as new words are defined, <b>HERE</b> will increase.</dd>
+<dt>VHERE ( -- n )</dt>
+<dd>Similar to <b>HERE</b>, this word will leave on top of the stack the first
+unallocated address in RAM memory pool for variables. The RAM pool is also
+allocated bottom-up.</dd>
+<dt>PHERE ( -- n )</dt>
+<dd>This will leave on stack the last allocated address in EEPROM memory pool
+for persistent variables. This pool is allocated from topmost EEPROM address
+down, thus you must first allocate some memory and then call <b>EHERE</b> to obtain
+the address of the new memory. This is a contrast with <b>HERE</b>
+and <b>DHERE</b>.</dd>
+<dt>ALLOT ( n -- )</dt>
+<dd>Allocate dictionary space in EEPROM by increasing <b>HERE</b>.
+You can use negative arguments to actually free back memory.</dd>
+<dt>VALLOT ( n -- )</dt>
+<dd>Allocate variable space in RAM by increasing <b>VHERE</b>.</dd>
+<dt>PALLOT ( n -- )</dt>
+<dd>Allocate persistent variable space by decreasing <b>PHERE</b>.</dd>
+<dt>CREATE ( -- )</dt>
+<dd>Parse user input for a space-delimited word name, then create the header
+of a DATA word and put <b>VHERE</b> in word body. No memory allocation is done,
+you will have to use <b>VALLOT</b> for this.</dd>
+<dt>VARIABLE ( -- )</dt>
+<dd>Parse user input for a space-delimited word name, then create a variable
+by allocating two bytes in RAM (with <b>VALLOT</b>) and appending the uniform
+pointer to allocated memory at the end of the DATA word definition.</dd>
+<dt>PVARIABLE ( -- )</dt>
+<dd>Similar to <b>VARIABLE</b>, but allocates 2 bytes in the persistent variable
+memory pool (<b>PHERE</b>).</dd>
+</dl>
+
+<a name="memaccess"></a>
+<h3>Memory access</h3>
+
+<dl>
+<dt>@ ( addr -- val )</dt>
+<dd>Fetch: take an address from the stack and push back the word from memory
+at that address</dd>
+<dt>! ( val addr -- )</dt>
+<dd>Assign: take an address and a value from the stack, and assign the value
+to the word in memory at that address</dd>
+<dt>C@ ( addr -- val )</dt>
+<dd>Fetch byte: similar to @, but reads the byte value at given address</dd>
+<dt>C!</dt>
+<dd>Assign byte: Similar to !, but assigns the value to a single byte at
+given address</dd>
+<dt>DC@ ( addr -- addr val )</dt>
+<dd>Equivalent to <b>DUP</b> <b>C@</b> - takes the byte value at given address
+and put it on the stack, but don't remove the address from the stack. This is a
+useful word when processing strings, for example</dd>
+<dt>ON ( addr -- )</dt>
+<dd>Writes <b>TRUE</b> to given address</dd>
+<dt>OFF ( addr -- )</dt>
+<dd>Writes <b>FALSE</b> to given address</dd>
+<dt>+! ( n addr -- )</dt>
+<dd>Add n to the word at given address</dd>
+</dl>
+
+<a name="inout"></a>
+<h3>Input and output</h3>
+
+<dl>
+<dt>EMIT ( char -- )</dt>
+<dd>Output the character from the top of the stack</dd>
+<dt>TYPE ( str -- )</dt>
+<dd>Display the zero-terminated string, whose address is on the top
+of the stack</dd>
+<dt>. ( n -- )</dt>
+<dd>Display the number from the top of the stack and a space</dd>
+<dt>.S</dt>
+<dd>Display the whole contents of the stack</dd>
+<dt>GETC ( -- n )</dt>
+<dd>Reads a single character from input stream (if there are no more
+characters buffered, waits until one is available)</dd>
+<dt>GETCQ ( -- n )</dt>
+<dd>Similar to <b>GETC</b>, but if the incoming character is '\' (backslash),
+reads the next character and interpret them according to character
+quoting rules (\n is translated to newline, \r to carriage return,
+\t to tabulation, \b to backspace)</dd>
+<dt>." ( -- )</dt>
+<dd>Displays the text immediately following the word, until either another
+double quote or a newline is encountered.</dd>
+</dl>
+
+<a name="constvars"></a>
+<h3>Predefined constants and variables</h3>
+
+<dl>
+<dt>RAMEND ( -- n )</dt>
+<dd>Push the size of the RAM (or the first address which does not
+refer to RAM on machines where RAM does not start at 0)</dd>
+<dt>E2END ( -- n )</dt>
+<dd>Push the size of EEPROM (or the first address which does not
+refer to EEPROM on machines where EEPROM does not start at 0)</dd>
+<dt>LAST ( -- n )</dt>
+<dd>Push the address of last defined word</dd>
+<dt>TRUE ( -- TRUE )</dt>
+<dd>Push the logical value <b>TRUE</b> (FFFF)</dd>
+<dt>FALSE ( -- FALSE )</dt>
+<dd>Push the logical value <b>FALSE</b> (0)</dd>
+<dt>DEPTH ( -- n )</dt>
+<dd>Push the current depth of the stack (will push 0 if stack is empty)</dd>
+<dt>STATE ( -- addr )</dt>
+<dd>This variable contains interpreter state (used by <b>INTERPRET</b>)</dd>
+</dl>
+
+<a name="strops"></a>
+<h3>Operations with strings</h3>
+
+<dl>
+<dt>S" ( -- str )</dt>
+<dd>Parse the string following the word until either a newline or a " is
+encountered, and push the address of that string on the stack</dd>
+<dt>SLEN ( str -- str n )</dt>
+<dd>Push the length of the string on the stack; do not remove
+the string address</dd>
+<dt>S2N ( str -- FALSE | n TRUE )</dt>
+<dd>Try to interpret the string whose address is on the top of the stack
+as a number; if this succeeds, pushes the number and TRUE on the stack;
+otherwise pushes just a FALSE. Always removes the string address from
+the stack.</dd>
+<dt>S2C ( str -- FALSE | n TRUE )</dt>
+<dd>Try to interpret the string whose address is on the top of the stack
+as a character in single quotes (e.g. 'a', 'Z', '\n' and so on). Handles
+properly quoted characters - \n for newline, \r for carriage return
+and so on</dd>
+</dl>
+
+<a name="controlflow"></a>
+<h3>Control flow</h3>
+
+<dl>
+<dt>IF ... {ELSE} ... THEN ( n -- )</dt>
+<dd>Check the topmost word on the stack; if it is not zero, the code after IF
+is executed; if it is zero, the optional code between ELSE and THEN is executed.</dd>
+<dt>?DO ... LOOP ( end start -- end counter )</dt>
+<dd>Starts a counted loop, the counter taking the value from start to end-1.
+Both counter and end values stay on stack while the loop is executed, and
+are removed once the loop is done. This is in contrast with traditional Forth,
+where loop counter and final value is kept on the return stack. Because of this,
+there are no I, J, K words in nForth; instead, use the regular Forth words
+for stack manipulations (DUP, OVER or PICK).</dd>
+<dt>BEGIN ... UNTIL ( -- )</dt>
+<dd>Execute the code between BEGIN and UNTIL; the UNTIL word picks the topmost
+word off the stack and examines it; if it is zero, the loop is restarted.
+If it is non-zero, the loop finishes.</dd>
+<dt>BEGIN ... {WHILE} ... REPEAT ( -- )</dt>
+<dd>Execute the loop between BEGIN and WHILE. The WHILE word picks up the top
+word and examines it; if it is zero, the part between WHILE and REPEAT is
+executed, then loop starts again from BEGIN; if not zero, the loop ends and
+execution continues past REPEAT. If WHILE is missing, the loop will never
+exit (except with the EXIT or THROW words)</dd>
+<dt>DOES&gt; ( -- )</dt>
+<dd>This is a very complex word, see topic
+<a href="#does">"Clever DATA words: DOES&gt;"</a> for more details.</dd>
+<dt>EXIT ( -- )</dt>
+<dd>Ends execution of the current word</dd>
+<dt>EXECUTE ( whdr -- )</dt>
+<dd>Execute the word whose address is on the stack</dd>
+<dt>CATCH ( whdr -- n )</dt>
+<dd>Execute the word whose address is on the stack and catch any exception
+it possibly throws. If words returns normally, a zero is put on the stack;
+otherwise the value passed to THROW is left on the stack</dd>
+<dt>THROW ( n -- )</dt>
+<dd>Throw a exception. Both data and stack pointers are restored to values
+that were saved with CATCH; the value passed to THROW is then put again on
+the stack and execution continues after the word CATCH</dd>
+</dl>
+
+<a name="compilation"></a>
+<h3>Compiling new words</h3>
+
+<dl>
+<dt>: wordname ... ; ( -- )</dt>
+<dd>Create a new word definition. The : word parses another word from input
+stream and creates a new indirect-code word with this name. Then it switches
+STATE to TRUE (compile mode). The ; word appends an EXIT command to vocabulary,
+makes the last word visible (invokes REVEAL) and switches STATE back to FALSE
+(interpret mode)</dd>
+<dt>WORD ( char -- str )</dt>
+<dd>This word takes a separator character from the stack and parses user input
+until this separator character is encountered, collecting all encountered
+non-separator characters into a string which is returned. A special case is
+when separator is a space (' '): in this case a newline is also considered
+a separator character. If separator is not a space, some special sequences
+are handled: "\n" is translated to a newline character, "\r" to a carriage
+return, "\t" to tabulation and "\b" to backspace</dd>
+<dt>FIND ( str -- str 0 | whdr -1 | whdr +1 )</dt>
+<dd>Look in all active vocabularies for the word with given name. If it is not
+found, the name string is left on the stack and a 0 is appended. Otherwise,
+the address of word header is put on the stack and a flag is appended - either
+-1 if word has the "immediate" execution flag, or +1 if it is a normal word</dd>
+<dt>' ( -- whdr )</dt>
+<dd>Parse a word from user input and invoke FIND on it; if word is not found,
+throw the NFE_UNKNOWN_WORD exception</dd>
+<dt>_HDR ( type name -- )</dt>
+<dd>Create a new word header in vocabulary. "type" is the word type
+(see WHF_TYPE_XXX constants in nf.h)</dd>
+<dt>REVEAL ( -- )</dt>
+<dd>Add the last defined word to user dictionary. The word will not be found
+by FIND until you invoke this word</dd>
+<dt>, ( n -- )</dt>
+<dd>This word just takes the number on the stack and appends it to last word
+definition (to user vocabulary). This is usually a word header address
+(e.g. when you're manually building indirect code words)</dd>
+<dt>C, ( n -- )</dt>
+<dd>Similar to , but appends only one byte to user vocabulary</dd>
+<dt>S, ( str -- )</dt>
+<dd>Appends to user vocabulary the indirect code that, when executed,
+will push the address of a copy of this string. The string is copied
+directly into the user vocabulary</dd>
+<dt>N, ( n -- )</dt>
+<dd>Appends to user vocabulary the indirect code that, when executed,
+will push given number on the stack</dd>
+</dl>
+
+<a name="advancedusage"></a>
+<h2>Advanced usage</h2>
+
+<a name="wordtypes"></a>
+<h3>Word types</h3>
+
+<p>nForth uses four different kinds of words: NATIVE, DATA, CODE and DOES,
+denoted by two bits in the word header. The four types of words will
+<b>EXECUTE</b> differently.
+</p>
+
+<ul>
+<li><em>NATIVE</em> words will contain native processor code which implement
+word functionality. These word executes fastest, but their size is most of the
+time also larger (about twice on AVRs) compared to indirect code implementations.
+<p>This word type is used to implement the very basic functionality. <b>DROP</b>,
+<b>DUP</b>, <b>OVER</b>, arithmetics and many other simple words are NATIVE
+words.
+</li>
+<li><em>CODE</em> words contain indirect code (directly starting after the word
+header). Indirect code consists mostly of 16-bit offsets to other words (to
+their headers, to be precise). Basically, when <b>EXECUTE</b> executes a CODE
+word, it just picks the 16-bit addresses one by one and recursively invokes
+<b>EXECUTE</b> with these numbers as argument. As you might have learned in
+the <a href="#impdetails">Implementation Details</a> chapter, indirect code
+may contain not only offsets to other words but also some special code for
+jumps (conditional and unconditional), numeric constants and a few very
+special opcodes (<b>EXIT</b> and <b>ICP</b>).
+<p>The <b>EXIT</b> code forces the <b>EXECUTE</b> word to return, continuing
+execution of the calling word.
+</p>
+<p>The <b>ICP</b> code will push on the stack the indirect-code-pointer where
+execution will be resumed after returning from current word. In other words,
+this is the address directly following the indirect code for currently
+executing word.
+</p>
+</li>
+<li><em>DATA</em> words contain a single 16-bit pointer to some data area.
+The size of this data area is not stored anywhere; you have to know it.
+Usually this is just another word in either RAM or EEPROM.
+<p>The <b>CREATE</b>, <b>VARIABLE</b>, <b>PVARIABLE</b> words will create
+a DATA word. <b>CREATE</b> won't fill the word body with anything; you have
+to put a pointer there yourself (with the <b>,</b> word). <b>VARIABLE</b> and
+<b>PVARIABLE</b> will allocate space for a 16-bit value with respectively
+<b>VALLOT</b> and <b>PALLOT</b>, and append the address of this value to
+the created word.
+</p>
+<p>When a DATA word is <b>EXECUTE</b>d, the 16-bit address from word body
+is simply put on the stack. This makes the allocated memory content immediately
+available for usage with words like <b>@</b> and <b>!</b>.
+</p>
+</li>
+<li><em>DOES</em> words are described in details in the next section.
+</li>
+</ul>
+
+<a name="does"></a>
+<h3>Clever DATA words: DOES&gt;</h3>
+
+<p>Normal DATA words will just put the address of the allocated space on the
+stack. However, you may also set up a DATA word such that some code will be
+automatically executed every time when such a word is invoked. For example,
+you might want to define a <b>CONST</b> word (similar to VARIABLE)
+to create new words which, when invoked, would put not the address of the
+allocated space, but directly the word at that address on the stack.
+</p>
+
+<p>Let's see how this can be implemented:
+</p>
+
+<pre>
+: CONST PVARIABLE PHERE ! DOES&gt; @ ;
+
+12 CONST DOZEN
+</pre>
+
+<p>The above defines a new word CONST which, when executed, will create a new
+persistent variable, then pick the topmost value off the stack and write it
+to the latest allocated address in the persistent pool (<b>PHERE</b>). Then
+comes the magic word <b>DOES&gt;</b>. What does it mean?
+</p>
+
+<p>At the time you invoke the CONST word, execution will break at the
+<b>DOES&gt;</b> word. Thus, for the word containing <b>DOES&gt;</b>
+it will act just like a regular <b>EXIT</b> word.
+</p>
+
+<p>If we would just create a variable named DOZEN, when we would invoke it,
+it would leave on the stack the address of some 16-bit space in either RAM
+or EEPROM (depending if we created the variable with <b>VARIABLE</b> or
+<b>PVARIABLE</b>). But <b>DOES&gt></b> modifies the last defined word
+(e.g. DOZEN) such that after pushing the address of the allocated space
+the code after <b>DOES&gt;</b> will execute. And that's the fetch word,
+<b>@</b>.
+</p>
+
+<p>So, when the code <code>12 CONST DOZEN</code> is executed, the following
+occurs:
+</p>
+
+<ol>
+<li><b>PVARIABLE</b>: A DATA word named DOZEN is created, two bytes are allocated with
+<b>PALLOC</b>, and a pointer to allocated area is inserted into the
+DATA word body.</li>
+<li><b>PHERE !</b>: The number on the top of the stack (e.g. 12) is assigned to the
+memory we just allocated.</li>
+<li><b>DOES&gt;</b>The DOZEN word is modified so that when it executes, the following occurs:</li>
+  <ol>
+  <li>The word from body is pushed on the stack (e.g. the address of the
+  allocated memory).</li>
+  <li>The <b>@</b> code is executed, replacing the address of the allocated
+  memory with the constant, e.g. 12</li>
+  </ol>
+</ol>
+
+<p>As a sidenote, there's a clever way to implement the CONST word, but this
+is left as a exercice to the reader ;-)
+</p>
+
+</body>
+</html>

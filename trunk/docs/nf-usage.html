@@ -1,0 +1,233 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+<link rel="stylesheet" type="text/css" href="docs.css">
+<title>The nForth kernel</title>
+</head>
+<body>
+
+<ul>
+<li><a href="nf-usage.html">Using nForth in your applications</a></li>
+  <ul>
+  <li><a href="nf-usage.html#basiccon">A basic Forth interactive console</a></li>
+  <li><a href="nf-usage.html#forthinc">Writing Forth words in C</a></li>
+  <li><a href="nf-usage.html#forthinforth">Writing Forth words in Forth</a></li>
+  <li><a href="nf-usage.html#appdic">Application-specific dictionary</a></li>
+  </ul>
+</ul>
+
+<h1>Using nForth in your applications</h1>
+
+<p>nForth has been designed to be easily integrated into user applications.
+However, you must understand that the basic design idea was
+"Forth is the main executing code, and invokes your C code when asked to",
+and not vice versa. It could be possible to do so, but there could be
+lacking things to use it in such a way.
+</p>
+
+<p>Also, nForth has some requirements for the way you compile and link
+your code.
+<p>
+
+<p>First of all, nForth can be compiled ONLY with the GNU C
+compiler (gcc, winavr, mingw32 and other names).
+<p>
+
+<p>Second, you must always use the -fno-toplevel-reorder switch,
+which prevents the compiler from moving around your functions:
+nForth requires that the functions in the executable come
+in the absolutely same order as they were defined.
+<p>
+
+<p>Third, on non-16-bit architectures you must use a special linker script,
+they can be found in libs/nforth/ldscripts/ and there's a README file
+there describing how you can create a linker script for your platform.
+The reason for using a linker script is to group all Forth words
+into a separate section (called .nf-flash), Forth data into another
+section called .nf-ram and Forth persistent variables into a third
+section called .nf-eeprom. These sections emulates the ROM, RAM
+and EEPROM memories on a microcontroller with 16-bit address space.
+</p>
+
+<a name="basiccon"></a>
+<h2>A basic Forth interactive console</h2>
+
+<p>Let's look at a very simple Forth application which will implement a
+interactive console where user may enter Forth code:
+<p>
+
+<pre>
+#include "nf.h"
+
+nf_context_t my_ctx;
+
+void nf_app_clean ()
+{
+}
+
+void nf_app_reset ()
+{
+    // The global nf_ctx variable should point to the active context
+    nf_ctx = &my_ctx;
+    // Initialize the nForth context
+    nf_reset_ctx (&my_ctx);
+    // Set up the active vocabulary for our context
+    my_ctx.voc [nfvCore] = NF_CODE2ADDR (&nf_voc_core_inter);
+    // Set up the data stack pointer to point to the base of the stack
+    nf_dsp = my_ctx.stack;
+    // Initialize i/o library (RS232 serial transceiver)
+    nf_init_io ();
+}
+
+int main (void)
+{
+    CLEAN ();
+    nf_execute (INTERPRET);
+    return 0;
+}
+</pre>
+
+<p>Let's look at main() first. The first thing it does is to invoke the
+CLEAN() function (NATIVE Forth words may be invoked directly as regular
+C functions). This cleans up the microcontroller's EEPROM, calls the
+application-defined nf_app_clean() function, and then invokes
+the <b>RESET</b> word, which basically sets <b>STATE</b> to <b>FALSE</b>
+and then calls the application-defined nf_app_reset() function.
+</p>
+
+<p>After <b>CLEAN</b>ing the virtual machine, main() invokes the
+nf_execute() macro, which will basically push on the data stack the
+address of a nForth word and then invoke <b>EXECUTE</b>. In our case
+we will execute the <b>INTERPRET</b> Forth word, which will accept user
+input and interpret or compile it.
+</p>
+
+<p>You must always define the functions nf_app_clean() and nf_app_reset(),
+otherwise your program won't link. Anyways, you will have to implement the
+nf_app_reset() function, otherwise the nForth kernel won't function properly.
+<p>
+
+<p>The nf_app_clean() function is expected to initialize any EEPROM variables
+your application might use to their default states. Since our simple application
+does not use any such variables, our nf_app_clean() is empty.
+</p>
+
+<p>The nf_app_reset() function is expected to do whatever initialization you
+need to do after a <b>RESET</b> of the nForth kernel. Basically, you will want
+to initialize all nForth contexts you use and set up the data stack pointer
+variable (which is globally held in a register for fast access).
+</p>
+
+<a name="forthinc"></a>
+<h2>Writing Forth words in C</h2>
+
+<p>For your application you'll want to provide additional words that will
+give access to additional functionality needed. There are two types of Forth
+words: native and indirect-code.
+</p>
+
+<p>Native words have a standard Forth word header, followed by a machine-code
+implementation. Nano-Forth allows writing these implementations in C, thus
+enhancing portability, increasing readability while maintaining high effectivity.
+</p>
+
+<p>Keep in mind that a native implementation takes about twice as much space as the
+equivalent word written in Forth (on AVR, on 64-bit processors the difference is
+even bigger).
+</p>
+
+<p>Here is a example of a native Forth word:
+</p>
+
+<pre>
+WORD ("XOR", XOR, WHF_TYPE_NATIVE)
+    cell_t arg2 = nf_pop ();
+    cell_t arg1 = nf_pop ();
+    nf_push (arg1 ^ arg2);
+END_WORD
+</pre>
+
+<p>As you can see, a native word starts with the WORD macro, which receives three
+arguments: the Forth word name, the C word name (which should be a legal C identifier)
+and word flags (see WHF_XXX macros in nf.h).
+</p>
+
+<p>After that comes the implementation of the word in C, you can use additional macros
+and functions from nf.h. The above function should be self-describing.
+</p>
+
+<p>Also note that first word in source file must be defined with the macro WORD_1st.
+The first word is special in the sense that it does not have a "previous" link
+(Forth words are linked in a chain, which is used during a word search).
+</p>
+
+<a name="forthinforth"></a>
+<h2>Writing Forth words in Forth</h2>
+
+<p>Also nano-Forth allows writing words in a macro language very similar to Forth
+itself. In fact, these are Forth indirect codes, just that they are wrapped in
+various special macros.
+</p>
+
+<p>Here is a typical implementation of a word named MAIN, which can be called
+instead of INTERPRET in the example in the previous section:
+</p>
+
+<pre>
+WORD_CODE_1st ("MAIN", MAIN, WHF_TYPE_CODE, 0)
+        CODE_WORD (RESET)
+    CODE_LABEL (main_again)
+        // INTERPRET never returns except if a exception occurs
+        CODE_PUSH_WORD (INTERPRET)
+        // Set the catch point here
+        CODE_WORD (CATCH)
+        CODE_WORD (ERROR)       // :: display the "Exx ..." message
+        CODE_JMP (main_again)
+END_WORD_CODE
+</pre>
+
+<p>The WORD_CODE macro begins the declaration of a Forth indirect-code word
+(unlike WORD, which starts a native word definition).
+The word body is equivalent to the following Forth code:
+</p>
+
+<pre>
+: MAIN RESET BEGIN [ ' INTERPRET N, ] CATCH ERROR REPEAT ;
+</pre>
+
+<a name="appdic"></a>
+<h2>Application-specific dictionary</h2>
+
+<p>Your application can define many additional words, which all will go into
+the nfvCore dictionary. To append your own words to existing core dictionary,
+you must use the last parameter to the WORD_1st or WORD_CODE_1st, which is the
+link to previous word in chain.
+</p>
+
+<p>All you have to do is to link the first word of your dictionary to one of the
+existing dictionaries (nf_voc_core, nf_voc_core_io or nf_voc_core_inter), like this:
+</p>
+
+<pre>
+WORD_CODE_1st ("MAIN", MAIN, WHF_TYPE_CODE, _NF_ASMNAME (nf_voc_core_inter) - __CODE_BASE)
+</pre>
+
+<p>Then you must define your own dictionary. <em>Before</em> the definition of the
+last word in your vocabulary, you must invoke the following macro:
+</p>
+
+<pre>
+VOCABULARY (nf_voc_xxxxx);
+</pre>
+
+<p>Finally, when initializing the Forth context in nf_app_reset(), don't forget to
+put the address of the dictionary in the context:
+</p>
+
+<pre>
+my_ctx.voc [nfvCore] = NF_CODE2ADDR (&nf_voc_xxxxx);
+</pre>
+
+</body>
+</html>
