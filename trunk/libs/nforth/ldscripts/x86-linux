@@ -215,7 +215,7 @@ SECTIONS
   /DISCARD/ : { *(.note.GNU-stack) *(.gnu_debuglink) }
 
   /*-------* Place 32k of pseudo-microcontroller ROM here *-------*/
-  .nf_flash 0x0000 : AT (DATA_SEGMENT_END)
+  .nf_flash 0x0000 : AT (_end)
     {
       /* Skip some bytes to avoid having words at addresses
          with special meaning (e.g. CODE_RET & CODE_ICP) */

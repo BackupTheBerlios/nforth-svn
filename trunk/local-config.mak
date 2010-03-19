@@ -5,7 +5,8 @@ AVR-GCC.FLASHFLAGS = -D "-c stk500v2 -P /dev/stk500 -p m16"
 CFLAGS.DEF += -DF_CPU=8000000UL
 
 # Choose the target platform here (avr, x86_64-linux, x86-linux)
-TARG = avr
+TARG = x86-linux
+# Choose compiling mode (release, debug)
 MODE = release
 
 define setup_x86_64-linux
