@@ -47,6 +47,13 @@ tools:
 to build it with anything else</dd>
 </dl>
 
+<p>Unfortunately, nano-Forth needs support for 8-bit relocations in object file format.
+This support was missing until February 2010, I have
+<a href="http://sourceware.org/bugzilla/show_bug.cgi?id=11297">submitted a patch which
+has been applied to binutils trunk</a>. If your binutils are older, you will have
+to patch and compile binutils (download the patch from the link above) on your own.
+</p>
+
 <a name="sourcetree"></a>
 <h2>Source tree structure</h2>
 
