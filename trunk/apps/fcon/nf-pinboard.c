@@ -25,21 +25,17 @@
  * PC[0..7] - connected to LED cluster elements 2-9
  * PD0,PD1 (RXD,TXD) - connected to FT232 (serial port)
  * PD[3-6] - connected to buttons A,B,C,D
- * PB[0-2] - connected to LCD E,R/W,RS signals
- * PB[4-7] - connected to LCD bus DB[4-7]
  */
 
 void nf_app_cts_on ()
 {
     // FT232 uses inverted CTS signal
     PORTA &= ~_BV (1);
-    PORTD |= _BV (4);
 }
 
 void nf_app_cts_off ()
 {
     PORTA |= _BV (1);
-    PORTD &= ~_BV (4);
 }
 
 // Enable or disable a LED (led number = 0..9)
@@ -61,6 +57,7 @@ WORD_1st ("LED", LED, WHF_TYPE_NATIVE, nf_voc_core_inter - __CODE_BASE)
 END_WORD
 
 // Sleep for given number of milliseconds (1/1000 seconds)
+// We can't use _delay_ms here since it needs a constant argument.
 // ( ms -- )
 WORD ("DELAY", DELAY, WHF_TYPE_NATIVE)
     uint16_t x = nf_pop ();

@@ -1,13 +1,15 @@
 # tibs macros for avr-gcc toolkit
 
-.SUFFIXES: .c .cpp .o .lo .a .pc .pc.in .out
+.SUFFIXES: .c .cpp .o .lo .a .pc .pc.in
 
 ifndef AVR-GCC.MCU
 $(error Please set the AVR-GCC.MCU variable to target$(NL)\
 microcontroller identifier (see -mmcu= avr-gcc option description))
 endif
 
-AVR-GCC.CC ?= avr-gcc -c
+AVR-GCC.PFX ?= avr-
+
+AVR-GCC.CC ?= $(AVR-GCC.PFX)gcc -c
 AVR-GCC.CFLAGS ?= -pipe -Wall -Wextra -mmcu=$(AVR-GCC.MCU) \
     $(AVR-GCC.CFLAGS.$(MODE)) $(AVR-GCC.CFLAGS.DEF) $(AVR-GCC.CFLAGS.INC) $(CFLAGS)
 AVR-GCC.CFLAGS.DEF = $(CFLAGS.DEF)
@@ -16,19 +18,19 @@ AVR-GCC.CFLAGS.INC = $(if $(DIR.INCLUDE.C),-I$(subst :, -I,$(DIR.INCLUDE.C)))
 AVR-GCC.CFLAGS.release ?= -g -Os
 AVR-GCC.CFLAGS.debug ?= -g -D__DEBUG__
 
-AVR-GCC.CXX.OK := $(shell which avr-g++ 2>/dev/null)
+AVR-GCC.CXX.OK := $(shell which $(AVR-GCC.PFX)g++ 2>/dev/null)
 
 ifneq ($(AVR-GCC.CXX.OK),)
-AVR-GCC.CXX ?= avr-g++ -c
+AVR-GCC.CXX ?= $(AVR-GCC.PFX)g++ -c
 AVR-GCC.CXXFLAGS ?= $(AVR-GCC.CFLAGS) $(CXXFLAGS)
 else
 AVR-GCC.CXX ?= echo "C++ compiler is not installed"; false
 endif
 
-AVR-GCC.CPP ?= avr-gcc -E
+AVR-GCC.CPP ?= $(AVR-GCC.PFX)gcc -E
 AVR-GCC.CPPFLAGS ?= -pipe -x c-header $(AVR-GCC.CFLAGS.DEF) $(AVR-GCC.CFLAGS.INC)
 
-AVR-GCC.LD ?= avr-gcc
+AVR-GCC.LD ?= $(AVR-GCC.PFX)gcc
 AVR-GCC.LDFLAGS ?= -pipe -mmcu=$(AVR-GCC.MCU) \
     $(AVR-GCC.LDFLAGS.$(MODE)) $(LDFLAGS)
 AVR-GCC.LDFLAGS.LIBS ?= $(LDLIBS)
@@ -41,7 +43,7 @@ AVR-GCC.LINKLIB = $(if $(findstring $L,$1),,$(if $(findstring /,$1),$1,-l$1))
 AVR-GCC.MDEP ?= $(or $(MAKEDEP),makedep)
 AVR-GCC.MDEPFLAGS ?= -c -a -p'$$(OUT)' $(AVR-GCC.CFLAGS.DEF) $(AVR-GCC.CFLAGS.INC) $(MDEPFLAGS)
 
-AVR-GCC.AR ?= avr-ar
+AVR-GCC.AR ?= $(AVR-GCC.PFX)ar
 AVR-GCC.ARFLAGS ?= crs
 
 # Arbitrary assumptions about the programmer options
@@ -50,7 +52,7 @@ AVR-GCC.FLASHFLAGS ?= -c avrisp2 -P /dev/ttyUSB0 -p m168
 
 # Translate application/library pseudo-name into an actual file name
 XFNAME.AVR-GCC = $(addprefix $$(OUT),\
-    $(patsubst %$E,%.out,\
+    $(patsubst %$E,%,\
     $(if $(findstring $L,$1),$(addprefix lib,$(patsubst %$L,%.a,$1)),$1)\
 ))
 
@@ -78,7 +80,7 @@ endef
 
 LINK.AVR-GCC.AR = $(AVR-GCC.AR) $(AVR-GCC.ARFLAGS) $@ $^
 define LINK.AVR-GCC.EXEC
-    $(AVR-GCC.LD) -o $@ $(AVR-GCC.LDFLAGS) $(LDFLAGS) $1 $^ $(AVR-GCC.LDFLAGS.LIBS) $(LDFLAGS.LIBS) $2 -Wl,-Map,$(@:.out=.map)
+    $(AVR-GCC.LD) -o $@ $(AVR-GCC.LDFLAGS) $(LDFLAGS) $1 $^ $(AVR-GCC.LDFLAGS.LIBS) $(LDFLAGS.LIBS) $2 -Wl,-Map,$@.map
     size $@
 endef
 

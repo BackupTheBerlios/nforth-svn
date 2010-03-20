@@ -28,9 +28,9 @@ SUBMAKEFILES += $(DIR.TIBS)/extra/avr-gcc.mak
 
 # Default toolkit
 ifeq ($(ARCH),avr)
-TOOLKIT = AVR-GCC
+TOOLKIT ?= AVR-GCC
 else
-TOOLKIT = GCC
+TOOLKIT ?= GCC
 endif
 
 # Build tools if they aren't available

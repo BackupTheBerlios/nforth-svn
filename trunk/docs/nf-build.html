@@ -1,0 +1,130 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+<link rel="stylesheet" type="text/css" href="docs.css">
+<title>Building the nano-Forth kernel</title>
+</head>
+<body>
+
+<ul>
+<li><a href="nf-build.html">Building the nano-Forth kernel</a></li>
+  <ul>
+  <li><a href="nf-build.html#requirements">Requirements</a></li>
+  <li><a href="nf-build.html#sourcetree">Source tree structure</a></li>
+  <li><a href="nf-build.html#configuring">Configuring the kernel</a></li>
+  <li><a href="nf-build.html#buildfcon">Building an application</a></li>
+  <li><a href="nf-build.html#flashing">Making a ROM image and flashing</a></li>
+  </ul>
+</ul>
+
+<h1>Building the nano-Forth kernel</h1>
+
+<p>The project is using a build system named TIBS - "The Instant Build System".
+This is to emphasize the fact that it's way faster than traditional autoconf :)
+However, you'll have to spend a little time understanding how it works and
+how it can be used.
+</p>
+
+<p>Also note that I do all my developement on a 64-bit Linux platform, so if
+your platform is different, you may encounter various obstacles I didn't know
+about. Most of the time, though, they're quite easy to solve: if you can't,
+just mail me and we'll try to solve them together.
+</p>
+
+<a name="requirements"></a>
+<h2>Requirements</h2>
+
+<p>To successfuly build and use the nano-Forth kernel, you will need the following
+tools:
+</p>
+
+<dl>
+<dt>GNU Make 3.81 or later</dt>
+<dd>TIBS uses features of GNU Make version 3.81 and later</dd>
+<dt>avr-gcc</dt>
+<dd>nano-Forth is highly dependent on gcc features - you will not be able
+to build it with anything else</dd>
+</dl>
+
+<a name="sourcetree"></a>
+<h2>Source tree structure</h2>
+
+<p>Source tree is layed out as follows:
+</p>
+
+<pre>
+docs/           The directory with documentation
+include/        Public header files, private header files are in the
+                directory of the module where they are used.
+libs/           The libraries are all here, every library in a separate
+                subdirectory.
+apps/           Applications, every application in its own subdirectory.
+tibs/           The Instant Build System makefiles.
+out/            Autocreated directory, contains compiled object files,
+                libraries, executables and in general, everything generated
+                during the build process.
+</pre>
+
+<a name="configuring"></a>
+<h2>Configuring the kernel</h2>
+
+<p>Before building the nano-Forth kernel you must configure its basic features.
+There are a few settings you can tweak in <code>include/nf/nf-defs.h</code>.
+For a first-time try the default values are reasonable.
+</p>
+
+<p>Now you must decide for which architecture you will build. For your first try
+I'd recommend to build a x86_64 version, you can build the <code>fcon</code> application
+and interactively try the Forth kernel to see what it can do. Unfortunately, due to
+some limitations of object file formats you will not be able to build nano-Forth for
+a x86 target: this partially works on Linux but the resulting executable can be run
+only as root (because executable will contain some code at offset zero, which is
+prohibited for users without administrative capabilities). There are no such
+limits on the x86_64 platform.
+</p>
+
+<p>To select the architecture you want to build for, open <code>local-config.mak</code>
+and locate the <b>TARG</b> variable. Set it to one of the values listed in comment.
+</p>
+
+<a name="buildfcon"></a>
+<h2>Building an application</h2>
+
+<p>Now run <code>make</code>. You will see a list of targets that can be built.
+Run <code>make fcon</code> to build the interactive Forth console application.
+If everything goes fine, you will have at the end a executable file
+out/linux.x86_64/debug/fcon, which you can run now.
+</p>
+
+<p>There is some nano-Forth test code in <code>tests/nf</code> which you may try.
+It is meant to test various aspects of the kernel, it's not a programming example.
+However, it may help you to get the basic ideas of how to use nForth.
+</p>
+
+<a name="flashing"></a>
+<h2>Making a ROM image and flashing</h2>
+
+<p>If you want to build an AVR ROM image and flash it into your developement board,
+it is easy. First, set <b>TARG</b> in <code>local-config.mak</code> to <b>avr</b>.
+Now build the <code>fcon</code> application just like described above. In the end,
+you will get a ELF executable named out/avr.avr/release/fcon. You can flash it
+now automatically by invoking:
+</p>
+
+<pre>
+make flash-fcon
+</pre>
+
+<p>This will invoke the script <code>tibs/extra/flash-elf.awk</code>, which will
+flash your ELF file into your debug board using avrdude. You can tweak avrdude
+parameters in <code>local-config.mak</code> in the <b>AVR-GCC.FLASHFLAGS</b>
+variable.
+</p>
+
+<p>If you prefer the old way of doing it, you will have to convert the ELF
+file into a .hex file as usual with avr-objcopy.
+</p>
+
+</body>
+</html>

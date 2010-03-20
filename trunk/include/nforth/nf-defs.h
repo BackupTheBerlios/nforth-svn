@@ -8,45 +8,26 @@
 #ifndef __NF_DEFS_H__
 #define __NF_DEFS_H__
 
-/*
- * On architectures with pointers larger than 16 bits we have to
- * subtract a certain value from every text and data offset to
- * fit in 16 bits. This value is used then in linker script file
- * as the base address for the respective section.
- *
- * On platforms with 16-bit address space just define this to 0.
- */
-#if defined ARCH_AVR
-# define __CODE_BASE	0
-# define __EEPROM_BASE	0
-# define __RAM_BASE	0
-
-# define __CODE_END	_etext
-# define __EEPROM_END	__eeprom_end
-# define __RAM_END	__heap_start
-
-extern void _etext, __eeprom_end, __heap_start;
-
-#elif defined ARCH_X86
-# define __CODE_BASE	0x0000
-# define __EEPROM_BASE	0x8000
-# define __RAM_BASE	0xc000
-
-#elif defined ARCH_X86_64
-# define __CODE_BASE	0x610000
-# define __EEPROM_BASE	0x620000
-# define __RAM_BASE	0x630000
-
-#endif
-
 /**
  * Data (+return in multi-task configs) stack size on this platform (in bytes).
  * Data stack grows upwards while return stack grows downwards, thus the
  * memory is used effectively (unless stacks meet somewhere, which whill
  * lead to an almost guaranteed crash, heh).
+ *
+ * This is the biggest member of the nf_context_t structure. If you're going
+ * to use multiple Forth contexts (for multitasking), you must make sure that
+ * microcontroller RAM can hold as much nf_context_t structures as you need.
+ * Tweaking NF_STACK_SIZE will help you achieve that.
+ *
+ * Also keep in mind, that Forth variables (ALLOT, VARIABLE) will be allocated
+ * from RAM as well. If you fill the whole RAM with a nf_context_t, you won't have
+ * space for variables. So you have to make a balanced choice here.
+ *
+ * Note that NF_STACK_SIZE doesn't have to be a power of two, it's just that
+ * I like round numbers :-)
  */
 #ifdef ARCH_AVR
-#define NF_STACK_SIZE	256
+#define NF_STACK_SIZE	128
 #else
 #define NF_STACK_SIZE	4096
 #endif
@@ -74,6 +55,7 @@ extern void _etext, __eeprom_end, __heap_start;
 /**
  * Define the following macro to get full exception error text.
  * If undefined, only error codes like "E12 " will be printed.
+ * If defined, nano-Forth kernel will get substantialy larger.
  */
 #ifndef ARCH_AVR
 #define NF_ERROR_TEXT

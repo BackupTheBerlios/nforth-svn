@@ -8,6 +8,37 @@
 #ifndef __NF_PLATFORM_H__
 #define __NF_PLATFORM_H__
 
+/*
+ * On architectures with pointers larger than 16 bits we have to
+ * subtract a certain value from every text and data offset to
+ * fit in 16 bits. This value is used then in linker script file
+ * as the base address for the respective section.
+ *
+ * On platforms with 16-bit address space just define this to 0.
+ */
+#if defined ARCH_AVR
+# define __CODE_BASE	0
+# define __EEPROM_BASE	0
+# define __RAM_BASE	0
+
+# define __CODE_END	_etext
+# define __EEPROM_END	__eeprom_end
+# define __RAM_END	__heap_start
+
+extern void _etext, __eeprom_end, __heap_start;
+
+#elif defined ARCH_X86
+# define __CODE_BASE	0x0000
+# define __EEPROM_BASE	0x8000
+# define __RAM_BASE	0xc000
+
+#elif defined ARCH_X86_64
+# define __CODE_BASE	0x610000
+# define __EEPROM_BASE	0x620000
+# define __RAM_BASE	0x630000
+
+#endif
+
 #if defined ARCH_AVR
 #include <avr/io.h>
 #include <avr/eeprom.h>

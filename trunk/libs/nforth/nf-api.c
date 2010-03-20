@@ -48,9 +48,7 @@ void nf_reset_ctx (nf_context_t *ctx)
 {
     nf_memset (ctx, 0, sizeof (nf_context_t));
 
-    // Core dictionary
-    ctx->voc [0] = NF_CODE2ADDR (&nf_voc_core);
-    // User dictionary
+    // Reset user dictionary
     ctx->voc [nfvUser] = nf_global.last;
 #ifndef NF_GLOBAL_STATE
     ctx->state = 0;
